@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Car Tracker App</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter font from Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- PWA: Link to Web App Manifest -->
+    <link rel="manifest" href="manifest.json">
+    <!-- PWA: Theme color for browser UI -->
+    <meta name="theme-color" content="#2563eb">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        #map {
+            height: 400px; /* Default height for the map */
+            width: 100%;
+            border-radius: 0.75rem; /* rounded-xl */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* shadow-md */
+        }
+        @media (min-width: 768px) {
+            #map {
+                height: 500px; /* Larger height for tablets and desktops */
+            }
+        }
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 24px;
+            border-radius: 0.75rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            max-width: 90%;
+            width: 400px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+        <p class="text-lg font-semibold text-blue-600">Loading...</p>
+    </div>
+
+    <!-- Main Application Container -->
+    <div class="container mx-auto p-4 md:p-8 flex-grow">
+        <h1 class="text-4xl font-extrabold text-center text-blue-700 mb-8">Car Tracker</h1>
+
+        <!-- User Information -->
+        <div class="bg-white p-6 rounded-xl shadow-md mb-8">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Your User ID:</h2>
+            <p id="userIdDisplay" class="text-lg font-mono bg-gray-100 p-3 rounded-md break-all">Loading User ID...</p>
+        </div>
+
+        <!-- Car ID Input and Join Section -->
+        <div class="bg-white p-6 rounded-xl shadow-md mb-8">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Join or Create a Car Session</h2>
+            <div class="flex flex-col md:flex-row gap-4 mb-4">
+                <input type="text" id="carIdInput" placeholder="Enter Car ID (e.g., Car123)"
+                       class="flex-grow p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button id="generateCarIdButton"
+                        class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+                    Generate New ID
+                </button>
+                <button id="joinCarButton"
+                        class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+                    Join Car
+                </button>
+            </div>
+            <p class="text-sm text-gray-600">Enter a Car ID to join an existing session or create a new one.</p>
+        </div>
+
+        <!-- Driver Section -->
+        <div id="driverSection" class="bg-white p-6 rounded-xl shadow-md mb-8 hidden">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Driver Controls for <span id="currentCarIdDisplay" class="text-blue-600"></span></h2>
+            <div class="flex items-center gap-4 mb-4">
+                <button id="toggleLocationShareButton"
+                        class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+                    Start Sharing Location
+                </button>
+                <span id="locationStatus" class="text-lg font-medium text-gray-600">Not sharing location.</span>
+            </div>
+
+            <h3 class="xl font-semibold text-gray-700 mb-3">Manage Passengers</h3>
+            <div class="flex flex-col md:flex-row gap-4 mb-4">
+                <input type="text" id="newPassengerNameInput" placeholder="New Passenger Name"
+                       class="flex-grow p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button id="addPassengerButton"
+                        class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+                    Add Passenger
+                </button>
+            </div>
+            <div id="passengerList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Passenger items will be dynamically added here -->
+            </div>
+        </div>
+
+        <!-- Passenger View Section -->
+        <div id="passengerViewSection" class="bg-white p-6 rounded-xl shadow-md hidden">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Tracking Car: <span id="trackedCarIdDisplay" class="text-blue-600"></span></h2>
+            <div id="map" class="mb-6"></div>
+            <h3 class="text-xl font-semibold text-gray-700 mb-3">Passenger Status</h3>
+            <div id="trackedPassengerList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Tracked passenger items will be dynamically added here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Modal -->
+    <div id="messageModal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <p id="modalMessage" class="text-lg mb-4"></p>
+            <button id="closeModalButton" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">OK</button>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, addDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables provided by the Canvas environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        // IMPORTANT: REPLACE THESE FIREBASE CONFIGURATION VALUES WITH YOUR ACTUAL PROJECT'S CONFIG
+        // You can find these in your Firebase Project Settings -> Your apps -> Web app -> Config
+        let firebaseConfig = {
+            apiKey: "AIzaSyAgjo8BJp4Tsk-mutrpRw89oTG2rePo1tA", // <--- REPLACE THIS
+            authDomain: "gogra-school-van.firebaseapp.com", // <--- REPLACE THIS
+            projectId: "gogra-school-van", // <--- REPLACE THIS
+            storageBucket: "gogra-school-van.firebasestorage.app", // <--- REPLACE THIS
+            messagingSenderId: "745424606065", // <--- REPLACE THIS
+            appId: "1:745424606065:web:ad7c946d595c49f5705cd0" // <--- REPLACE THIS
+            // measurementId: "G-JRCWLW4K56" // Add if you use Google Analytics
+        };
+
+        // Attempt to use environment-provided config if available and valid
+        try {
+            const envFirebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+            if (envFirebaseConfig && envFirebaseConfig.projectId && envFirebaseConfig.apiKey) {
+                firebaseConfig = envFirebaseConfig;
+                console.log("Using environment-provided Firebase configuration.");
+            } else {
+                console.warn("Environment Firebase config incomplete or missing. Using hardcoded fallback. Please update with your actual Firebase project details.");
+            }
+        } catch (e) {
+            console.error("Error parsing __firebase_config. Using hardcoded fallback config.", e);
+            console.warn("Please update the hardcoded firebaseConfig object in the HTML with your actual Firebase project details.");
+        }
+
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Initialize Firebase
+        let app;
+        let db;
+        let auth;
+        let userId = 'anonymous'; // Default anonymous user ID
+        let currentCarId = null; // The car ID the user is currently interacting with
+
+        // UI Elements
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const userIdDisplay = document.getElementById('userIdDisplay');
+        const carIdInput = document.getElementById('carIdInput');
+        const joinCarButton = document.getElementById('joinCarButton');
+        const generateCarIdButton = document.getElementById('generateCarIdButton'); // New button element
+        const driverSection = document.getElementById('driverSection');
+        const currentCarIdDisplay = document.getElementById('currentCarIdDisplay');
+        const toggleLocationShareButton = document.getElementById('toggleLocationShareButton');
+        const locationStatus = document.getElementById('locationStatus');
+        const newPassengerNameInput = document.getElementById('newPassengerNameInput'); // Corrected assignment
+        const addPassengerButton = document.getElementById('addPassengerButton');
+        const passengerListDiv = document.getElementById('passengerList');
+        const passengerViewSection = document.getElementById('passengerViewSection');
+        const trackedCarIdDisplay = document.getElementById('trackedCarIdDisplay');
+        const trackedPassengerListDiv = document.getElementById('trackedPassengerList');
+        const messageModal = document.getElementById('messageModal');
+        const modalMessage = document.getElementById('modalMessage');
+        const closeModalButton = document.getElementById('closeModalButton');
+
+        let map;
+        let carMarker;
+        let locationWatcherId = null; // To store the ID returned by watchPosition
+
+        // IMPORTANT: REPLACE THIS GOOGLE MAPS API KEY WITH YOUR ACTUAL KEY
+        // You can get one from: https://developers.google.com/maps/documentation/javascript/get-api-key
+        const GOOGLE_MAPS_API_KEY = 'AIzaSyAoee6YftTaAoJywpodZWsQt6je2shUWZc'; // <--- REPLACE THIS WITH YOUR ACTUAL KEY
+
+        // --- Utility Functions ---
+        function showLoading() {
+            loadingOverlay.classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            loadingOverlay.classList.add('hidden');
+        }
+
+        function showMessage(message) {
+            modalMessage.textContent = message;
+            messageModal.classList.remove('hidden');
+        }
+
+        closeModalButton.addEventListener('click', () => {
+            messageModal.classList.add('hidden');
+        });
+
+        // Exponential backoff for API calls
+        async function callWithRetry(fn, retries = 5, delay = 1000) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    return await fn();
+                } catch (error) {
+                    if (i < retries - 1) {
+                        console.warn(`Attempt ${i + 1} failed, retrying in ${delay / 1000}s...`, error);
+                        await new Promise(res => setTimeout(res, delay));
+                        delay *= 2; // Exponential backoff
+                    } else {
+                        console.error('All retries failed:', error);
+                        throw error;
+                    }
+                }
+            }
+        }
+
+        // --- Firebase Initialization and Authentication ---
+        async function initializeFirebase() {
+            showLoading();
+            console.log("Attempting to initialize Firebase...");
+            try {
+                // Check if the essential Firebase config properties are still placeholders
+                if (firebaseConfig.projectId === 'YOUR_FIREBASE_PROJECT_ID' || firebaseConfig.apiKey === 'YOUR_FIREBASE_API_KEY') {
+                    console.error("Firebase configuration is still using placeholder values. Please update them with your actual project details.");
+                    showMessage("Firebase config is incomplete. App will not function correctly. Check console.");
+                    hideLoading();
+                    return;
+                }
+
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                console.log("Firebase app and services initialized.");
+
+                // Sign in with custom token if available, otherwise anonymously
+                if (initialAuthToken) {
+                    console.log("Signing in with custom token...");
+                    await callWithRetry(() => signInWithCustomToken(auth, initialAuthToken));
+                    console.log("Signed in with custom token successfully.");
+                } else {
+                    console.log("Signing in anonymously...");
+                    await callWithRetry(() => signInAnonymously(auth));
+                    console.log("Signed in anonymously successfully.");
+                }
+
+                // Listen for auth state changes
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        userIdDisplay.textContent = userId;
+                        console.log("Authentication state changed: User is logged in with ID:", userId);
+                    } else {
+                        userId = 'anonymous'; // Fallback if somehow not authenticated
+                        userIdDisplay.textContent = 'Not authenticated (anonymous)';
+                        console.log("Authentication state changed: User is signed out or not authenticated.");
+                    }
+                    hideLoading();
+                });
+
+            } catch (error) {
+                console.error("Error initializing Firebase or authenticating:", error);
+                showMessage("Failed to initialize the app. Please check console for details.");
+                hideLoading();
+            }
+        }
+
+        // --- Google Maps Initialization ---
+        function loadGoogleMapsScript() {
+            return new Promise((resolve, reject) => {
+                if (window.google && window.google.maps) {
+                    console.log("Google Maps script already loaded.");
+                    resolve();
+                    return;
+                }
+                if (GOOGLE_MAPS_API_KEY === 'YOUR_GOOGLE_MAPS_API_KEY' || GOOGLE_MAPS_API_KEY === '') {
+                    console.error("Google Maps API Key is missing or is the placeholder. Please replace 'YOUR_GOOGLE_MAPS_API_KEY' with your actual key.");
+                    showMessage("Google Maps API Key is missing. Map will not load.");
+                    reject(new Error("Google Maps API Key missing."));
+                    return;
+                }
+
+                console.log("Loading Google Maps script...");
+                const script = document.createElement('script');
+                script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&callback=initMap`;
+                script.async = true;
+                script.defer = true;
+                script.onerror = () => {
+                    console.error('Failed to load Google Maps script.');
+                    showMessage('Failed to load Google Maps. Check your API key and network.');
+                    reject(new Error('Failed to load Google Maps script.'));
+                };
+                document.head.appendChild(script);
+                window.initMap = () => {
+                    console.log("Google Maps script loaded and initMap callback fired.");
+                    resolve();
+                };
+            });
+        }
+
+        async function initMap(latitude = 0, longitude = 0) {
+            console.log(`Initializing map with center: ${latitude}, ${longitude}`);
+            // Default to a central location if no coordinates are provided
+            const defaultLocation = { lat: latitude, lng: longitude };
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: defaultLocation,
+                zoom: 15,
+                mapId: 'DEMO_MAP_ID' // You can use your own map ID if you configure one in Google Cloud Console
+            });
+
+            carMarker = new google.maps.Marker({
+                position: defaultLocation,
+                map: map,
+                title: 'Car Location',
+                icon: {
+                    url: 'http://maps.google.com/mapfiles/ms/icons/car.png', // A simple car icon
+                    scaledSize: new google.maps.Size(40, 40)
+                }
+            });
+            console.log("Map and car marker initialized.");
+        }
+
+        // --- Location Tracking Functions ---
+        function startLocationSharing() {
+            if (!currentCarId) {
+                showMessage("Please join a car session first.");
+                console.warn("Attempted to start location sharing without a car ID.");
+                return;
+            }
+
+            if (locationWatcherId === null) {
+                locationStatus.textContent = "Sharing location...";
+                toggleLocationShareButton.textContent = "Stop Sharing Location";
+                toggleLocationShareButton.classList.remove('bg-green-600');
+                toggleLocationShareButton.classList.add('bg-red-600');
+
+                console.log("Starting geolocation watchPosition...");
+                locationWatcherId = navigator.geolocation.watchPosition(
+                    async (position) => {
+                        const { latitude, longitude } = position.coords;
+                        console.log(`Geolocation updated: ${latitude}, ${longitude}`);
+                        await updateCarLocation(currentCarId, latitude, longitude);
+                    },
+                    (error) => {
+                        console.error("Geolocation error:", error);
+                        showMessage(`Geolocation error: ${error.message}. Please ensure location services are enabled and permissions are granted.`);
+                        stopLocationSharing(); // Stop sharing on error
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        maximumAge: 0,
+                        timeout: 5000
+                    }
+                );
+                showMessage("Location sharing started! Please grant location permissions if prompted.");
+            } else {
+                showMessage("Location sharing is already active.");
+                console.log("Location sharing already active, not starting again.");
+            }
+        }
+
+        function stopLocationSharing() {
+            if (locationWatcherId !== null) {
+                navigator.geolocation.clearWatch(locationWatcherId);
+                locationWatcherId = null;
+                locationStatus.textContent = "Not sharing location.";
+                toggleLocationShareButton.textContent = "Start Sharing Location";
+                toggleLocationShareButton.classList.remove('bg-red-600');
+                toggleLocationShareButton.classList.add('bg-green-600');
+                showMessage("Location sharing stopped.");
+                console.log("Location sharing stopped.");
+            } else {
+                showMessage("Location sharing is not active.");
+                console.log("Location sharing not active, nothing to stop.");
+            }
+        }
+
+        // --- Firestore Data Operations ---
+
+        // Path for public car data
+        function getCarDocRef(carId) {
+            return doc(db, `artifacts/${appId}/public/data/cars`, carId);
+        }
+
+        // Path for public passenger data within a car
+        function getPassengerCollectionRef(carId) {
+            return collection(db, `artifacts/${appId}/public/data/cars`, carId, 'passengers');
+        }
+
+        async function updateCarLocation(carId, latitude, longitude) {
+            try {
+                const carDocRef = getCarDocRef(carId);
+                await callWithRetry(() => setDoc(carDocRef, {
+                    driverId: userId,
+                    latitude: latitude,
+                    longitude: longitude,
+                    timestamp: Date.now()
+                }, { merge: true })); // Use merge to only update specified fields
+                console.log("Car location updated in Firestore.");
+            } catch (error) {
+                console.error("Error updating car location:", error);
+                showMessage("Failed to update car location in the database.");
+            }
+        }
+
+        async function addPassenger(carId, name) {
+            if (!name.trim()) {
+                showMessage("Passenger name cannot be empty.");
+                return;
+            }
+            try {
+                const passengerCollectionRef = getPassengerCollectionRef(carId);
+                await callWithRetry(() => addDoc(passengerCollectionRef, {
+                    name: name.trim(),
+                    status: 'Not Picked', // Initial status
+                    addedBy: userId,
+                    timestamp: Date.now()
+                }));
+                newPassengerNameInput.value = ''; // Clear input
+                showMessage(`Passenger "${name}" added.`);
+                console.log(`Passenger "${name}" added to car "${carId}".`);
+            } catch (error) {
+                console.error("Error adding passenger:", error);
+                showMessage("Failed to add passenger.");
+            }
+        }
+
+        async function updatePassengerStatus(carId, passengerId, newStatus) {
+            try {
+                const passengerDocRef = doc(getPassengerCollectionRef(carId), passengerId);
+                await callWithRetry(() => updateDoc(passengerDocRef, { status: newStatus }));
+                showMessage(`Passenger status updated to "${newStatus}".`);
+                console.log(`Passenger ${passengerId} status updated to ${newStatus}.`);
+            } catch (error) {
+                console.error("Error updating passenger status:", error);
+                showMessage("Failed to update passenger status.");
+            }
+        }
+
+        // --- Real-time Listeners ---
+
+        let unsubscribeCarLocation = null;
+        let unsubscribePassengerList = null;
+
+        function startTrackingCar(carId) {
+            console.log(`Attempting to start tracking car: ${carId}`);
+            if (!db) {
+                showMessage("Database not initialized. Please wait for the app to load.");
+                console.error("Firestore DB not available when trying to start tracking car.");
+                return;
+            }
+
+            // Unsubscribe from previous listeners if any
+            if (unsubscribeCarLocation) {
+                unsubscribeCarLocation();
+                console.log("Unsubscribed from previous car location listener.");
+            }
+            if (unsubscribePassengerList) {
+                unsubscribePassengerList();
+                console.log("Unsubscribed from previous passenger list listener.");
+            }
+
+            const carDocRef = getCarDocRef(carId);
+            console.log("Setting up car location snapshot listener...");
+            unsubscribeCarLocation = onSnapshot(carDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    const { latitude, longitude } = data;
+                    console.log(`Car location received: ${latitude}, ${longitude}`);
+                    if (map && carMarker) {
+                        const newLatLng = new google.maps.LatLng(latitude, longitude);
+                        carMarker.setPosition(newLatLng);
+                        map.setCenter(newLatLng);
+                        map.setZoom(16); // Zoom in when location updates
+                    } else {
+                        // If map not yet initialized, initialize it with the first location
+                        console.log("Map not yet initialized, initializing with first car location.");
+                        loadGoogleMapsScript().then(() => initMap(latitude, longitude)).catch(e => console.error("Error initializing map:", e));
+                    }
+                } else {
+                    console.log("Car document does not exist for ID:", carId);
+                    if (carMarker) carMarker.setMap(null); // Remove marker if car disappears
+                    showMessage("Car not found or stopped sharing location.");
+                }
+            }, (error) => {
+                console.error("Error listening to car location:", error);
+                showMessage("Error tracking car location.");
+            });
+
+            const passengerCollectionRef = getPassengerCollectionRef(carId);
+            console.log("Setting up passenger list snapshot listener...");
+            unsubscribePassengerList = onSnapshot(query(passengerCollectionRef), (snapshot) => {
+                console.log("Passenger list updated.");
+                passengerListDiv.innerHTML = ''; // Clear driver's passenger list
+                trackedPassengerListDiv.innerHTML = ''; // Clear passenger view list
+
+                snapshot.forEach((doc) => {
+                    const passenger = { id: doc.id, ...doc.data() };
+                    renderPassengerItem(passenger, passengerListDiv, true); // For driver
+                    renderPassengerItem(passenger, trackedPassengerListDiv, false); // For passenger view
+                });
+            }, (error) => {
+                console.error("Error listening to passenger list:", error);
+                showMessage("Error fetching passenger list.");
+            });
+
+            currentCarId = carId;
+            currentCarIdDisplay.textContent = carId;
+            trackedCarIdDisplay.textContent = carId;
+            driverSection.classList.remove('hidden');
+            passengerViewSection.classList.remove('hidden');
+            console.log(`Car tracking started for ID: ${carId}. Driver and passenger sections shown.`);
+        }
+
+        function renderPassengerItem(passenger, container, isDriverView) {
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'bg-gray-50 p-4 rounded-lg shadow-sm flex items-center justify-between';
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'text-lg font-medium text-gray-700';
+            nameSpan.textContent = passenger.name;
+
+            const statusSpan = document.createElement('span');
+            statusSpan.className = `px-3 py-1 rounded-full text-sm font-semibold ${
+                passenger.status === 'Picked' ? 'bg-green-200 text-green-800' : 'bg-yellow-200 text-yellow-800'
+            }`;
+            statusSpan.textContent = passenger.status;
+
+            itemDiv.appendChild(nameSpan);
+
+            if (isDriverView) {
+                const toggleButton = document.createElement('button');
+                toggleButton.className = `ml-4 px-4 py-2 rounded-lg font-semibold text-white transition duration-300 ease-in-out transform hover:scale-105 ${
+                    passenger.status === 'Picked' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-green-500 hover:bg-green-600'
+                }`;
+                toggleButton.textContent = passenger.status === 'Picked' ? 'Mark Not Picked' : 'Mark Picked';
+                toggleButton.addEventListener('click', () => {
+                    const newStatus = passenger.status === 'Picked' ? 'Not Picked' : 'Picked';
+                    updatePassengerStatus(currentCarId, passenger.id, newStatus);
+                });
+                itemDiv.appendChild(toggleButton);
+            } else {
+                itemDiv.appendChild(statusSpan);
+            }
+            container.appendChild(itemDiv);
+        }
+
+        // --- Event Listeners ---
+        joinCarButton.addEventListener('click', () => {
+            console.log("Join Car button clicked.");
+            const carId = carIdInput.value.trim();
+            if (carId) {
+                startTrackingCar(carId);
+                showMessage(`Attempting to join car session: ${carId}`);
+            } else {
+                showMessage("Please enter a Car ID.");
+                console.warn("Join Car button clicked with empty Car ID.");
+            }
+        });
+
+        generateCarIdButton.addEventListener('click', () => {
+            console.log("Generate New ID button clicked.");
+            const newId = `Car-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+            carIdInput.value = newId;
+            showMessage(`New Car ID generated: ${newId}`);
+            console.log(`Generated new Car ID: ${newId}`);
+        });
+
+        toggleLocationShareButton.addEventListener('click', () => {
+            console.log("Toggle Location Share button clicked.");
+            if (locationWatcherId === null) {
+                startLocationSharing();
+            } else {
+                stopLocationSharing();
+            }
+        });
+
+        addPassengerButton.addEventListener('click', () => {
+            console.log("Add Passenger button clicked.");
+            if (!currentCarId) {
+                showMessage("Please join a car session before adding passengers.");
+                return;
+            }
+            addPassenger(currentCarId, newPassengerNameInput.value);
+        });
+
+        // --- Initial Setup ---
+        window.onload = async () => {
+            console.log("Window loaded. Starting initial setup...");
+            showLoading();
+            await initializeFirebase();
+            // Load Google Maps script only once, then initialize map with default coords
+            await loadGoogleMapsScript().then(() => initMap(0,0)).catch(e => console.error("Initial map setup failed:", e)); // Initialize map with default center
+            hideLoading();
+            console.log("Initial setup complete.");
+
+            // PWA: Register Service Worker
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => { // This listener might be redundant if window.onload already fired
+                    navigator.serviceWorker.register('service-worker.js')
+                        .then(registration => {
+                            console.log('Service Worker registered with scope:', registration.scope);
+                        })
+                        .catch(error => {
+                            console.error('Service Worker registration failed:', error);
+                        });
+                });
+            }
+        };
+
+    </script>
+</body>
+</html>
